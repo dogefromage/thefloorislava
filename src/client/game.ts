@@ -105,7 +105,19 @@ export class Game
         this.menuCamera.updateProjectionMatrix();
     }
 
-    addGameObject(go: GameObject,id = randomId())
+    createUniqueID()
+    {
+        let id = '';
+        do
+        {
+            id = randomId();
+        }
+        while (this.gameObjects.has(id))
+
+        return id;
+    }
+
+    addGameObject(go: GameObject, id = this.createUniqueID())
     {
         this.gameObjects.set(id, go);
     }
