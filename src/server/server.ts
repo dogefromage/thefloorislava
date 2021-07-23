@@ -21,7 +21,7 @@ let shortIds = new Map<string, string>();
 
 io.on('connection', (socket: socketio.Socket) =>
 {
-    // generate simpler id to save bandwidth
+    // use shorter id to save bandwidth
     let id = '';
     do
     {

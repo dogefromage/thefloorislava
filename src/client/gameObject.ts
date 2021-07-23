@@ -9,4 +9,8 @@ export interface GameObject
     lateUpdate?(world: NoiseWorld, dt: number): void;
 
     onDeath(): void;
+
+    getData(): string
+
+    getInfo(): string
 }
