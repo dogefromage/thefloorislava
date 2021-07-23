@@ -5,6 +5,7 @@ import { getModel } from './assetsLoader';
 import { getAxes } from './input';
 import { lerpClamp } from '../common/utils';
 import { GameObject } from './gameObject';
+import * as dataCompressor from '../common/dataCompressor'; 
 
 export class Player implements GameObject
 {
@@ -35,6 +36,7 @@ export class Player implements GameObject
 
         this.game.addToScene(this.mesh);
 
+        // make into promise!!
         getModel('assets/models/spaceship.obj', (model) => 
         {
             // replace old mesh
@@ -132,6 +134,16 @@ export class Player implements GameObject
         this.game.removeFromScene(this.mesh);
         this.game.removeFromScene(this.collider);
     }
+
+    setData(data: dataCompressor.GameObjectData)
+    {
+        
+    }
+}
+
+export type PlayerInfo =
+{
+    name: string
 }
 
 export class MainPlayer extends Player
@@ -164,5 +176,24 @@ export class MainPlayer extends Player
         else if (this.rotX < -1.570796) this.rotX = -1.570796;
 
         super.update(world, dt);
+    }
+    
+    getData()
+    {
+        let dataObj = 
+        {
+            position: this.position
+        };
+
+        return dataCompressor.compress(dataObj);
+    }
+
+    getInfo()
+    {
+        let info: PlayerInfo = 
+        {
+            name: this.name
+        };
+        return info;
     }
 }

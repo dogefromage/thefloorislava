@@ -4,6 +4,8 @@ import { MainPlayer, Player } from './player';
 import { randomId } from '../common/utils';
 import { ThirdPersonCamera } from './thirdPersonCamera';
 import { GameObject } from './gameObject';
+import * as dataCompressor from '../common/dataCompressor'; 
+import * as io from 'socket.io-client';
 
 export class Game
 {
@@ -12,9 +14,10 @@ export class Game
     private renderer: THREE.Renderer;
     private scene: THREE.Scene;
 
-    // for changing aspect
+    // cameras
     private menuCamera: THREE.PerspectiveCamera;
     private playerCamera: THREE.PerspectiveCamera;
+    private thirdPersonCamera: ThirdPersonCamera;
     private mainCamera: 'menu' | 'player' = 'menu';
 
     private lastTime = new Date().getTime() / 1000;
@@ -26,7 +29,7 @@ export class Game
     private gameObjects: Map<string, GameObject> = new Map();
 
     constructor(
-        private clientID: string
+        private socket: io.Socket,
     )
     {
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -45,7 +48,7 @@ export class Game
         this.menuCamera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
         this.playerCamera = new THREE.PerspectiveCamera( 85, window.innerWidth / window.innerHeight, 0.01, 100 );
 
-        this.addGameObject(new ThirdPersonCamera(this, this.playerCamera));
+        this.thirdPersonCamera = new ThirdPersonCamera(this, this.playerCamera);
 
         const light = new THREE.DirectionalLight(0xFFFFFF, 0.9);
         light.position.set(3, 10, 3);
@@ -63,21 +66,12 @@ export class Game
 
         requestAnimationFrame(() => this.update() );
 
-        document.addEventListener('la-join', (e) =>
-        {
-            let name = '';
-            if (e instanceof CustomEvent)
-            {
-                name = e.detail.name || name;
-            }
-
-            this.joinPlayer(clientID, name);
-        });
+        this.socket.on('server-data', (dataString) => this.setData(dataString));
     }
 
     joinPlayer(id: string, name: string)
     {
-        if (id === this.clientID)
+        if (id === this.socket.id)
         {
             const player = new MainPlayer(this, name, this.world.generateSpawningLocation());
             this.addGameObject(player, id);
@@ -195,10 +189,7 @@ export class Game
             }
         }
 
-        for (let [ id, go ] of this.gameObjects)
-        {
-            go.lateUpdate?.(this.world, dt);
-        }
+        this.thirdPersonCamera.update(this.world, dt);
 
         /////////////// RENDER ////////////////
         if (this.mainCamera === 'menu')
@@ -214,6 +205,36 @@ export class Game
         else if (this.mainCamera === 'player')
         {
             this.renderer.render(this.scene, this.playerCamera);
+        }
+    }
+
+    setData(dataString: string)
+    {
+        let data = dataCompressor.dejsonify(dataString);
+        let unknownIDs: string[] = [];
+
+        for (let [ id, dataArr ] of data.go)
+        {
+            let go = this.gameObjects.get(id);
+            if (go !== undefined)
+            {
+                let dataObj = dataCompressor.decompress(dataArr);
+                go.setData(dataObj);
+            }
+            else
+            {
+                // ask server to send information about object (type, 3dmodel, names, etc)
+                unknownIDs.push(id);
+            }
+        }
+
+        if (unknownIDs.length > 0)
+        {
+            this.socket.emit('request-go-info', unknownIDs, (serverResponceData) =>
+            {
+                // create objects etc.
+                console.log(serverResponceData);
+            });
         }
     }
 }

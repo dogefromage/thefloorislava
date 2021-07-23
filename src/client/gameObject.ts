@@ -1,4 +1,5 @@
 import { NoiseWorld } from "./noiseWorld";
+import * as dataCompressor from '../common/dataCompressor'; 
 
 export interface GameObject
 {
@@ -6,11 +7,7 @@ export interface GameObject
 
     update(world: NoiseWorld, dt: number): void;
 
-    lateUpdate?(world: NoiseWorld, dt: number): void;
-
     onDeath(): void;
 
-    getData(): string
-
-    getInfo(): string
+    setData(data: dataCompressor.GameObjectData): void;
 }

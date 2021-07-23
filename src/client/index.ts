@@ -1,28 +1,34 @@
 import './styles';
 import { Game } from './game';
 import * as io from 'socket.io-client';
+
 const socket: io.Socket = io.io(location.host);
 
-const game = new Game(socket.id);
+const game = new Game(socket);
 
 const menu = document.querySelector('#menu');
 
 document.querySelector('#join-button')?.addEventListener('click', () =>
 {
-    setVisibility(menu, false);
-    
     let inputField = document.querySelector('#name-input');
     let name = inputField?.nodeValue || 'noname';
 
-    document.dispatchEvent(new CustomEvent('la-join', 
+    let playerInfo = 
     {
-        detail: 
-        {
-            name
-        },
-    }));
+        name
+    }
 
-    enterPointerLock();
+    socket.emit('request-join', playerInfo, () => 
+    {
+        // request accepted
+        setVisibility(menu, false);
+        game.joinPlayer(socket.id, name);
+        enterPointerLock();
+    }, (responce) => 
+    {
+        // request denied
+        alert('join denied, server says: "' + responce + '"');
+    });
 });
 
 document.addEventListener('la-death', (e) =>
