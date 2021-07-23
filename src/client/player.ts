@@ -3,7 +3,7 @@ import { Game } from './game';
 import { NoiseWorld } from './noiseWorld';
 import { getModel } from './assetsLoader';
 import { getAxes } from './input';
-import { lerpClamp } from './utils';
+import { lerpClamp } from '../common/utils';
 import { GameObject } from './gameObject';
 
 export class Player implements GameObject

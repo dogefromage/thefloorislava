@@ -1,11 +1,9 @@
 import * as THREE from 'three';
 import { NoiseWorld } from './noiseWorld';
 import { MainPlayer, Player } from './player';
-import { randomId } from './randomId';
+import { randomId } from '../common/utils';
 import { ThirdPersonCamera } from './thirdPersonCamera';
 import { GameObject } from './gameObject';
-
-const clientID = '123456';
 
 export class Game
 {
@@ -27,13 +25,15 @@ export class Game
 
     private gameObjects: Map<string, GameObject> = new Map();
 
-    constructor()
+    constructor(
+        private clientID: string
+    )
     {
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize( window.innerWidth, window.innerHeight );
         document.body.appendChild( this.renderer.domElement );
 
-        window.addEventListener('resize', this.resize);
+        window.addEventListener('resize', () => this.resize() );
 
         document.addEventListener('keydown', (e) => 
         {
@@ -77,7 +77,7 @@ export class Game
 
     joinPlayer(id: string, name: string)
     {
-        if (id === clientID)
+        if (id === this.clientID)
         {
             const player = new MainPlayer(this, name, this.world.generateSpawningLocation());
             this.addGameObject(player, id);
@@ -142,6 +142,11 @@ export class Game
         return this.mainPlayer;
     }
 
+    getGameState()
+    {
+        return this.gameState;
+    }
+
     update()
     {
         requestAnimationFrame(() => this.update() );
@@ -169,7 +174,7 @@ export class Game
                 go.onDeath();
                 this.removeGameObject(id);
 
-                if (id === clientID)
+                if (id === this.clientID)
                 {
                     this.gameState = 'inmenu';
                     this.mainPlayer = null;

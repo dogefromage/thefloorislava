@@ -1,7 +1,9 @@
 import './styles';
 import { Game } from './game';
+import * as io from 'socket.io-client';
+const socket: io.Socket = io.io(location.host);
 
-const game = new Game();
+const game = new Game(socket.id);
 
 const menu = document.querySelector('#menu');
 
@@ -30,6 +32,14 @@ document.addEventListener('la-death', (e) =>
         setVisibility(menu, true);
         exitPointerLock();
     }, 2000);
+});
+
+document.addEventListener('click', () =>
+{
+    if (game.getGameState() === 'ingame')
+    {
+        enterPointerLock();
+    }
 });
 
 function enterPointerLock()
