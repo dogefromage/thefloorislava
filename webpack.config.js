@@ -52,6 +52,10 @@ module.exports = (env, argv) =>
         {
             extensions: [ '.ts', '.js', '.scss' ]
         },
+        optimization: 
+        {
+            usedExports: dev, // remove unused function
+        },
         plugins:
         [
             new MiniCssExtractPlugin(

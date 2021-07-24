@@ -1,10 +1,8 @@
 import { NoiseWorld } from "./noiseWorld";
 import * as THREE from 'three';
-import { QuadraticBezierCurve, Quaternion } from "three";
 import { Game } from "./game";
-import { GameObject } from './gameObject';
 
-export class ThirdPersonCamera implements GameObject
+export class ThirdPersonCamera
 {
     state: 'dead' | 'alive' = 'alive';
     
@@ -15,9 +13,7 @@ export class ThirdPersonCamera implements GameObject
         public aimSmoothness = 10,
         public moveSmoothness = 0.2) {}
 
-    update(world: NoiseWorld, dt: number) {}
-    
-    lateUpdate(world: NoiseWorld, dt: number)
+    update(world: NoiseWorld, dt: number)
     {
         let mainPlayer = this.game.getMainPlayer();
         if (mainPlayer !== null)
