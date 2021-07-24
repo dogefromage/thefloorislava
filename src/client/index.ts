@@ -1,33 +1,30 @@
 import './styles';
-import { Game } from './game';
+import { ClientGame } from './clientGame';
 import * as io from 'socket.io-client';
 
 const socket: io.Socket = io.io(location.host);
 
-const game = new Game(socket);
+const game = new ClientGame(socket);
 
 const menu = document.querySelector('#menu');
 
 document.querySelector('#join-button')?.addEventListener('click', () =>
 {
-    let inputField = document.querySelector('#name-input');
-    let name = inputField?.nodeValue || 'noname';
+    let inputField: any = document.querySelector('#name-input');
+    let name = inputField?.value || 'noname';
 
-    let playerInfo = 
+    socket.emit('request-join', name, (joinAccepted: boolean, msg: string) => 
     {
-        name
-    }
-
-    socket.emit('request-join', playerInfo, () => 
-    {
-        // request accepted
-        setVisibility(menu, false);
-        game.joinPlayer(socket.id, name);
-        enterPointerLock();
-    }, (responce) => 
-    {
-        // request denied
-        alert('join denied, server says: "' + responce + '"');
+        if (joinAccepted)
+        {
+            // request accepted
+            setVisibility(menu, false);
+            enterPointerLock();
+        }
+        else
+        {
+            alert('join denied, server says: "' + msg + '"');
+        }
     });
 });
 
@@ -59,7 +56,7 @@ function exitPointerLock()
 {
     const doc: any = document; // trick typescript
     document.exitPointerLock = document.exitPointerLock || doc.mozExitPointerLock;
-    document.exitPointerLock();
+    document.exitPointerLock?.();
 }
 
 document.addEventListener('keydown', (e) =>

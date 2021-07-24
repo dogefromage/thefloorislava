@@ -1,22 +1,22 @@
-import { NoiseWorld } from "./noiseWorld";
+import { ClientNoiseWorld } from "./clientNoiseWorld";
 import * as THREE from 'three';
-import { Game } from "./game";
+import { ClientGame } from "./clientGame";
 
 export class ThirdPersonCamera
 {
     state: 'dead' | 'alive' = 'alive';
     
     constructor(
-        public game: Game, 
+        public game: ClientGame, 
         public camera: THREE.PerspectiveCamera,
         public distance = 0.15,
         public aimSmoothness = 10,
         public moveSmoothness = 0.2) {}
 
-    update(world: NoiseWorld, dt: number)
+    update(world: ClientNoiseWorld, dt: number)
     {
         let mainPlayer = this.game.getMainPlayer();
-        if (mainPlayer !== null)
+        if (mainPlayer !== undefined)
         {
             // position
             let dirVector = mainPlayer.position.clone().sub(this.camera.position);

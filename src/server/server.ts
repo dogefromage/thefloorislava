@@ -1,7 +1,8 @@
 import * as express from "express";
 import * as socketio from "socket.io";
 import * as path from "path";
-import * as dataCompressor from "../common/dataCompressor";
+import { Game } from "./game";
+import { ClientDataRequest, ServerGameData } from "../common/gameObjectTypes";
 
 const app = require('express')();
 const port = Number(process.env.PORT || 6969);
@@ -17,32 +18,40 @@ app.get("/", (req: express.Request, res: express.Response) =>
     res.sendFile(path.resolve(process.cwd(), 'src/client/index.html'));
 });
 
-interface ClientData
+let game = new Game();
+
+class Client
 {
-    name: string,
-    goData?: number[]
+    public request?: ClientDataRequest;
+
+    constructor(
+        public socket: socketio.Socket
+        ) 
+    {
+    }
 }
 
-let clients = new Map<string, ClientData>();
+let clients = new Map<string, Client>();
 
 io.on('connection', (socket: socketio.Socket) =>
 {
     console.log(`${socket.id} connected`);
 
-    socket.on('request-join', (playerInfo, acceptCallback, denyCallback) =>
+    clients.set(socket.id, new Client(socket));
+
+    socket.on('request-join', (name: string, callback: (acceptJoin: boolean, msg: string) => void) =>
     {
-        let clientData: ClientData =
-        {
-            name: playerInfo.name
-        };
+        game.addPlayer(socket.id, name);
 
-        clients.set(socket.id, clientData);
-
-        acceptCallback();
+        callback(true, '');
     });
 
     socket.on('disconnect', () =>
     {
+        game.removePlayer(socket.id);
+
+        clients.delete(socket.id);
+
         console.log(`${socket.id} disconnected`);
     });
 });
@@ -55,21 +64,48 @@ const server = http.listen(port, () =>
 let dt = 0.1;
 setInterval(() => 
 {
-    let serverData: dataCompressor.ServerData = 
-    {
-        go: []
-    };
+    game.update(dt * 0.05);
 
-    for (let [ id, clientData ] of clients)
+    let baseData = game.getBasicServerData();
+
+    let hasSpecificData = false;
+
+    for (let [ id, client ] of clients)
     {
-        let goData = clientData.goData;
-        if (goData !== undefined)
+        let data = baseData;
+
+        if (client.request !== undefined)
         {
-            serverData.go.push([ id, goData ])
+            let specificData = game.getClientSpecificGameData(client.request);
+            data = 
+            {
+                ...baseData,
+                ...specificData
+            };
+            hasSpecificData = true;
         }
+        client.request = undefined;
+
+        let jsonData = JSON.stringify(data, function(key, value) 
+        {
+            // limit precision of floats
+            if (typeof(value) === 'number') 
+            {
+                return parseFloat(value.toFixed(3));
+            }
+            return value;
+        });
+
+        if (hasSpecificData)
+        {
+            // console.log(jsonData);
+        }
+
+        // test if should be volatile
+        client.socket.volatile.emit('server-data', jsonData, (request: ClientDataRequest) =>
+        {
+            // safe request for next sending of data
+            client.request = request;
+        });
     }
-
-    io.emit('server-data', data);
-
-
 }, 1000 * dt);

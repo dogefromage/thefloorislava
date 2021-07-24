@@ -21,7 +21,7 @@ module.exports = (env, argv) =>
                 {
                     test: /\.ts$/,
                     use: 'ts-loader',
-                    include: [ path.resolve(__dirname, 'src/client') ],
+                    include: [ path.resolve(__dirname, 'src/client'), path.resolve(__dirname, 'src/common') ],
                 },
                 {
                     test: /\.scss$/,

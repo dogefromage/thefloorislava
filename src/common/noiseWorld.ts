@@ -1,19 +1,15 @@
+import { makeNoise4D, Noise4D } from '../open-simplex-noise/lib/4d';
 import * as THREE from 'three';
-import { makeNoise4D, Noise4D } from './open-simplex-noise/lib/4d';
-import { marchingCubes } from './marchingCubes';
-import { Vector3 } from 'three';
-import { Game } from './game';
 
 export class NoiseWorld
 {
     private noiseGenerator: Noise4D;
-    private mesh: THREE.Mesh | null = null;
-    private noiseOffset: THREE.Vector4;
-    private noiseOffsetVelocity: THREE.Vector4;
-    private isolevel = 0;
+    
+    public noiseOffset: THREE.Vector4;
+    public noiseOffsetVelocity: THREE.Vector4;
+    public isolevel = 0;
 
     constructor(
-        private game: Game, 
         public seed: number,
         public bounds: THREE.Box3,
         )
@@ -22,22 +18,6 @@ export class NoiseWorld
         
         this.noiseOffset = new THREE.Vector4(0, 0, 0, 0);
         this.noiseOffsetVelocity = new THREE.Vector4(0, 0, 0, 0);
-
-        this.generateMesh();
-
-        // generate outlinebox
-        const boxGeometry = new THREE.BoxGeometry(4, 4, 4);
-        // const transparentMaterial = new THREE.MeshBasicMaterial({
-        const transparentMaterial = new THREE.MeshPhongMaterial({
-            color: 0xaaffff,
-            opacity: 0.3,
-            transparent: true,
-            side: THREE.DoubleSide,
-            flatShading: true,
-          });
-        const box = new THREE.Mesh(boxGeometry, transparentMaterial);
-
-        this.game.addToScene(box);
     }
 
     update(dt: number)
@@ -47,8 +27,6 @@ export class NoiseWorld
         this.noiseOffsetVelocity.add(offsetAcceleration);
         this.noiseOffsetVelocity.setLength(0.1);
         this.noiseOffset.add(this.noiseOffsetVelocity.clone().multiplyScalar(dt));
-
-        this.generateMesh();
     }
 
     isInWall(x: number, y: number, z: number)
@@ -108,7 +86,7 @@ export class NoiseWorld
             iterations++;
             if (iterations > 100) // failsafe
             {
-                return new Vector3(0, 0, 0);
+                return new THREE.Vector3(0, 0, 0);
             }
         }
     }
@@ -123,28 +101,11 @@ export class NoiseWorld
         );
     }
 
-    generateMesh()
+    getState()
     {
-        const geometry = marchingCubes(
-            (x: number, y: number, z: number) => this.getNoiseValue(x, y, z), 
-            this.isolevel,  // isolevel
-            this.bounds,
-            0.1); // resolution
-
-        if (this.mesh == null)
-        {
-            const material = new THREE.MeshNormalMaterial();
-            // const material = new THREE.MeshPhongMaterial();
-            // new THREE.MeshBasicMaterial({ color: 0xffff00 })
-    
-            this.mesh = new THREE.Mesh(geometry, material);
-    
-            this.game.addToScene(this.mesh);
-        }
-        else
-        {
-            this.mesh.geometry.dispose();
-            this.mesh.geometry = geometry;
-        }
+        return [
+            this.isolevel,
+            this.noiseOffset.x, this.noiseOffset.y, this.noiseOffset.z, this.noiseOffset.w,
+        ];
     }
 }
