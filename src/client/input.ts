@@ -1,21 +1,50 @@
+import { ClientInput } from "../common/gameObjectTypes";
+import { SafeRingBuffer } from "./ringBuffer";
 
-let axisX = 0, axisY = 0;
-let axisToken = 0;
+
+let axisSumX = 0;
+let axisSumY = 0;
+
+/**
+ * This circular buffer keeps track of the sum of all inputs.
+ * The difference of two sums will always correspond to the 
+ * distance the input has traveled in this timeframe
+ */
+let buffer = new SafeRingBuffer(512, 2);
 
 document.addEventListener('mousemove', (e) =>
 {
-    axisX = e.movementX;
-    axisY = e.movementY;
-    
-    // used to identify updates to avoid using same input twice
-    axisToken++;
+    axisSumX += e.movementX;
+    axisSumY += e.movementY;
+
+    buffer.addEntry([ axisSumX, axisSumY ]);
 });
 
-export function getAxes()
+/**
+ * Subtracting the older sum from the newer sum somehow results in the integral between the two timeFrames.
+ * This function searches the buffervalue which matches the last time best and uses it to compute the deltaAxes.
+ */
+export function getAxesDelta(lastIndex: number): ClientInput
 {
-    return [
-        axisX,
-        axisY,
-        axisToken
+    if (buffer.getCurrentIndex() <= lastIndex)
+    {
+        // no new input
+        return [ 0, 0 ];
+    }
+
+    let currentEntry = buffer.getCurrentEntry();
+    let oldEntry = buffer.getClosestEntry(lastIndex);
+
+    let axes: ClientInput = 
+    [
+        currentEntry[0] - oldEntry[0],
+        currentEntry[1] - oldEntry[1],
     ];
+
+    return axes;
+}
+
+export function getCurrentIndex()
+{
+    return buffer.getCurrentIndex();
 }

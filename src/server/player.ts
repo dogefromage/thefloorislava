@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { Game, GameObject } from './game';
-import { GameObjectPropertyTypes, GameObjectState } from '../common/gameObjectTypes';
+import { ClientInput, GameObjectInformation, GameObjectPropertyType, GameObjectState } from '../common/gameObjectTypes';
 import { NoiseWorld } from '../common/noiseWorld';
+import { log } from '../common/debug';
+import { getRotation, movePlayer } from '../common/playerMovement';
 
 export class Player implements GameObject
 {
@@ -10,6 +12,7 @@ export class Player implements GameObject
     public rotVelY = 0;
 
     private collider: THREE.BufferGeometry;
+    private input: ClientInput = [ 0, 0 ];
 
     public isDead = false;
 
@@ -25,21 +28,13 @@ export class Player implements GameObject
             new THREE.WireframeGeometry(new THREE.CylinderGeometry(scale * 0.4, scale * 0.45, scale * 1.7, 5, 1, true)); 
     }
 
-    getRotation()
-    {
-        return new THREE.Euler(this.rotX, this.rotY, 0, 'YXZ');
-    }
-
     update(world: NoiseWorld, dt: number)
     {
-        ////////////// MOVEMENT ////////////////
-        let speed = 0.5;
-        let movementVector = new THREE.Vector3(0, 0, speed * dt).applyEuler(this.getRotation());
-        this.position.add(movementVector);
+        this.setState( movePlayer(this.getState(), this.input, dt ));
 
         ////////////// COLLISIONS ////////////////
         // create matrix to transform vertices to world space
-        let rotation = this.getRotation();
+        let rotation = getRotation(this.rotX, this.rotY);
         rotation.x += 1.570796; // 90°
         let rotationQuat = new THREE.Quaternion().setFromEuler(rotation);
         let matrix = new THREE.Matrix4().compose(this.position, rotationQuat, new THREE.Vector3(1,1,1));
@@ -70,22 +65,48 @@ export class Player implements GameObject
     
     getInfo()
     {
-        let info: GameObjectState = 
+        let info: GameObjectInformation = 
         [
-            GameObjectPropertyTypes.Name, this.name
+            GameObjectPropertyType.Name, this.name
         ];
 
         return info;
+    }
+
+    setState(state: GameObjectState)
+    {
+        // set state
+        if (state.length === 5)
+        {
+            this.position.x = state[0];
+            this.position.y = state[1];
+            this.position.z = state[2];
+            this.rotX = state[3];
+            this.rotY = state[4];
+        }
+        else
+        {
+            log('state did not match object');
+            return;
+        }
     }
     
     getState()
     {
         let state: GameObjectState = 
         [
-            GameObjectPropertyTypes.Position, this.position.x, this.position.y, this.position.z,
-            GameObjectPropertyTypes.Rotation, this.rotX, this.rotY,
+            this.position.x, 
+            this.position.y, 
+            this.position.z, 
+            this.rotX, 
+            this.rotY,
         ];
 
         return state;
-    }    
+    }
+
+    setInput(input: ClientInput)
+    {
+        this.input = input;
+    }
 }

@@ -25,7 +25,7 @@ export class NoiseWorld
         let offsetAcceleration = new THREE.Vector4(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5, 3 * (Math.random()));
         offsetAcceleration.setLength(0.05 * dt);
         this.noiseOffsetVelocity.add(offsetAcceleration);
-        this.noiseOffsetVelocity.setLength(0.1);
+        this.noiseOffsetVelocity.setLength(0.15);
         this.noiseOffset.add(this.noiseOffsetVelocity.clone().multiplyScalar(dt));
     }
 
@@ -93,6 +93,23 @@ export class NoiseWorld
 
     getNoiseValue(x: number, y: number, z: number)
     {
+        // let noiseVal = 0;
+
+        // for (let i = 0; i < 1; i++)
+        // {
+        //     let s = 2**i;
+        //     let m = 0.5**i;
+
+        //     noiseVal += m * this.noiseGenerator(
+        //             s * (this.noiseOffset.x + x),
+        //             s * (this.noiseOffset.y + y),
+        //             s * (this.noiseOffset.z + z),
+        //             s * (this.noiseOffset.w),
+        //         );
+        // }
+
+        // return noiseVal;
+
         return this.noiseGenerator(
             this.noiseOffset.x + x,
             this.noiseOffset.y + y,

@@ -2,10 +2,15 @@ import * as THREE from 'three';
 import { marchingCubes } from './marchingCubes';
 import { ClientGame } from './clientGame';
 import { NoiseWorld } from '../common/noiseWorld';
+import { log } from '../common/debug';
+import { GameObjectState } from '../common/gameObjectTypes';
+import { integrateStates } from '../common/goState';
 
 export class ClientNoiseWorld extends NoiseWorld
 {
     private mesh: THREE.Mesh | null = null;
+
+    private stateVelocity: GameObjectState | undefined;
 
     constructor(
         private game: ClientGame, 
@@ -34,24 +39,68 @@ export class ClientNoiseWorld extends NoiseWorld
 
     update(dt: number)
     {
-        // interpolate
+        /**
+         * interpolate between server values
+         */
+         if (this.stateVelocity !== undefined)
+         {
+             let state = this.getState();
+             state = integrateStates(state, this.stateVelocity, dt);
+             this.setState(state);
+         }
 
         this.generateMesh();
     }
 
-    setState(data: number[])
+    setState(state: GameObjectState)
     {
-        if (data.length === 5)
+        if (state.length === 5)
         {
-            this.isolevel =      data[0];
-            this.noiseOffset.x = data[1];
-            this.noiseOffset.y = data[2];
-            this.noiseOffset.z = data[3];
-            this.noiseOffset.w = data[4];
+            this.isolevel =      state[0];
+            this.noiseOffset.x = state[1];
+            this.noiseOffset.y = state[2];
+            this.noiseOffset.z = state[3];
+            this.noiseOffset.w = state[4];
         }
         else
         {
-            throw new Error('lol');
+            log('state does not work');
+        }
+    }
+
+    getState(): GameObjectState
+    {
+        return [
+            this.isolevel,
+            this.noiseOffset.x,
+            this.noiseOffset.y,
+            this.noiseOffset.z,
+            this.noiseOffset.w,
+        ]
+    }
+
+    onServerData(state: GameObjectState, dataIndex: number, avgServerDeltaTime: number)
+    {
+        // for first call
+        if (this.stateVelocity === undefined)
+        {
+            this.setState(state);
+        }
+        
+        let currState = this.getState();
+        if (currState.length != state.length)
+        {
+            log('states do not match!');
+        }
+
+        /**
+         * calculate state velocity for smoothly updating object during this.update()
+         */
+        this.stateVelocity = [];
+
+        for (let i = 0; i < currState.length; i++)
+        {
+            this.stateVelocity.push((state[i] - currState[i]) / avgServerDeltaTime);
         }
     }
 

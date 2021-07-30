@@ -1,40 +1,22 @@
+import { ClientGameObject } from "../client/clientGame";
 
 
 /**
  * Enum acting as key for properties which are sent between server and client.
  * Using a number instead of strings safes bandwidth.
  */
-export const enum GameObjectPropertyTypes
+export const enum GameObjectPropertyType
 {
-    Position,
-    Rotation,
     Name,
 };
 
-/**
- * A GameObjectState is an array of state items of an object.
- * The array should only contain GameObjectPropertyTypes followed by values for the corresponding property.
- */
-export type GameObjectState = ( GameObjectPropertyTypes | string | number )[];
+export type GameObjectInformation = ( GameObjectPropertyType | number | string )[];
 
-/**
- * If a client either 
- *  - unique id
- *  - wants to know information about a gameObject or 
- *  - wants to asks if an object still exists,
- * the client should add its ID into the corresponding array
- * and send the request to the server. 
- */
-export interface ClientDataRequest
-{
-    id: number,      // identifier
-    in: string[],   // info
-    ex: string[]    // exists
-};
+export type GameObjectState = number[];
 
 /**
  * ServerGameData is sent to the client and contains 
- *  - id: identifier which maches request id.
+ *  - ix: identifier which maches request index.
  *  - wo: the current world state.
  *  - go: a key-value pair list of all gameObject states.
  *  - in: the info which was requested in the ClientDataRequest in same order as requested.
@@ -42,9 +24,38 @@ export interface ClientDataRequest
  */
 export interface ServerGameData
 {
-    id?: number,
-    wo?: number[];
+    ix: number,
+    wo?: GameObjectState;
     go?: [ string, GameObjectState ][],
-    in?: GameObjectState[],
+    in?: GameObjectInformation[],
     ex?: number[],
+}
+
+/**
+ * If a client either 
+ *  - in: wants to know information about a gameObject or 
+ *  - ex: wants to asks if an object still exists,
+ * the client should add its ID into the corresponding array
+ * and send the request to the server. 
+ *  - id: is used to match the request of server and client.
+ */
+export interface ClientDataRequest
+{
+    in: string[],   // info
+    ex: string[]    // exists
+};
+
+export type ClientInput = [ number, number ];
+
+/**
+ * The clients sends this object back after receiving server data.
+ * - ix: index used for mainPlayer prediction
+ * - in: user input
+ * - re: clientDataRequest
+ */
+export interface ClientData
+{
+    ix: number,
+    in: ClientInput,
+    re?: ClientDataRequest
 }

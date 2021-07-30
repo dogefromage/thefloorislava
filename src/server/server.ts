@@ -2,7 +2,7 @@ import * as express from "express";
 import * as socketio from "socket.io";
 import * as path from "path";
 import { Game } from "./game";
-import { ClientDataRequest, ServerGameData } from "../common/gameObjectTypes";
+import { ClientData, ClientDataRequest, ServerGameData } from "../common/gameObjectTypes";
 
 const app = require('express')();
 const port = Number(process.env.PORT || 6969);
@@ -22,7 +22,8 @@ let game = new Game();
 
 class Client
 {
-    public request?: ClientDataRequest;
+    public lastRequest?: ClientDataRequest;
+    public lastIndex?: number;
 
     constructor(
         public socket: socketio.Socket
@@ -64,7 +65,7 @@ const server = http.listen(port, () =>
 let dt = 0.1;
 setInterval(() => 
 {
-    game.update(dt * 0.05);
+    game.update(dt);
 
     let baseData = game.getBasicServerData();
 
@@ -72,19 +73,27 @@ setInterval(() =>
 
     for (let [ id, client ] of clients)
     {
-        let data = baseData;
-
-        if (client.request !== undefined)
+        let data: ServerGameData =
         {
-            let specificData = game.getClientSpecificGameData(client.request);
-            data = 
-            {
-                ...baseData,
-                ...specificData
-            };
+            ix: -1,
+            ...baseData
+        };
+
+        if (client.lastRequest !== undefined)
+        {
+            let specificData = game.getClientSpecificGameData(client.lastRequest);
+            
+            // merge
+            data = { ...data, ...specificData };
+            
             hasSpecificData = true;
+            client.lastRequest = undefined;
         }
-        client.request = undefined;
+
+        if (client.lastIndex !== undefined)
+        {
+            data.ix = client.lastIndex;
+        }
 
         let jsonData = JSON.stringify(data, function(key, value) 
         {
@@ -96,16 +105,19 @@ setInterval(() =>
             return value;
         });
 
-        if (hasSpecificData)
-        {
-            // console.log(jsonData);
-        }
+        console.log(jsonData);
 
-        // test if should be volatile
-        client.socket.volatile.emit('server-data', jsonData, (request: ClientDataRequest) =>
+        client.socket.volatile.emit('server-data', jsonData, (clientData: ClientData) =>
         {
-            // safe request for next sending of data
-            client.request = request;
+            game.setInput(client.socket.id, clientData.in);
+
+            client.lastIndex = clientData.ix;
+
+            if (clientData.re !== undefined)
+            {
+                // safe request for next sending of data
+                client.lastRequest = clientData.re;
+            }
         });
     }
 }, 1000 * dt);

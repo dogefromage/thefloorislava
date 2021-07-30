@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { ClientNoiseWorld } from './clientNoiseWorld';
 import { ClientMainPlayer, ClientPlayer } from './clientPlayer';
-import { randomId } from '../common/utils';
 import { ThirdPersonCamera } from './thirdPersonCamera';
 import * as io from 'socket.io-client';
-import { ClientDataRequest, GameObjectPropertyTypes, ServerGameData, GameObjectState } from '../common/gameObjectTypes';
+import { ClientDataRequest, GameObjectPropertyType, ServerGameData, GameObjectState, ClientData } from '../common/gameObjectTypes';
+import * as INPUT from './input';
+import { lerp } from 'three/src/math/MathUtils';
 
 export interface ClientGameObject
 {
@@ -12,7 +13,23 @@ export interface ClientGameObject
     
     onDeath(): void;
 
-    setState(state: GameObjectState): void;
+    onServerData(serverState: GameObjectState, dataIndex: number, avgServerDeltaTime: number): void;
+}
+
+/**
+ * holds server state until client knows information to create object
+ */
+class DummyGameObject implements ClientGameObject
+{
+    constructor(public state: GameObjectState) {}
+
+    update(world: ClientNoiseWorld, dt: number) {}
+    onDeath() {};
+
+    onServerData(serverState: GameObjectState, dataIndex: number)
+    {
+        this.state = serverState;
+    }
 }
 
 export class ClientGame
@@ -37,7 +54,12 @@ export class ClientGame
     private gameObjects = new Map<string, ClientGameObject>();
 
     private dataRequests = new Map<number, ClientDataRequest>();
-    private lastDataRequestNumber = 0;
+
+    private lastServerDataMillis = new Date().getTime();
+    private lastInputBufferIndex = 0;
+    private avgServerDeltaTime = -1;
+
+    private currentDataIndex = 0;
     
     constructor(
         private socket: io.Socket,
@@ -77,7 +99,9 @@ export class ClientGame
 
         requestAnimationFrame(() => this.update() );
 
-        this.socket.on('server-data', (jsonData, requestCallback) => this.setData(jsonData, requestCallback));
+        this.socket.on('server-data', 
+            (jsonData, requestCallback) => this.onData(jsonData, requestCallback)
+            );
     }
 
     resize()
@@ -114,7 +138,7 @@ export class ClientGame
 
     update()
     {
-        requestAnimationFrame(() => this.update() );
+        requestAnimationFrame( () => this.update() );
 
         //////////// TIME ////////////////
         let currentTime = new Date().getTime() / 1000;
@@ -136,9 +160,10 @@ export class ClientGame
         if (this.mainCamera === 'menu')
         {
             // orbit the cube
-            this.menuCamera.position.y = 2.5;
-            this.menuCamera.position.x = Math.sin(0.1 * currentTime) * 4.5;
-            this.menuCamera.position.z = Math.cos(0.1 * currentTime) * 4.5;
+            let dist = 2.5;
+            this.menuCamera.position.y = dist;
+            this.menuCamera.position.x = Math.sin(0.1 * currentTime) * dist * 2;
+            this.menuCamera.position.z = Math.cos(0.1 * currentTime) * dist * 2;
             this.menuCamera.lookAt(0, 0, 0);
 
             this.renderer.render(this.scene, this.menuCamera);
@@ -149,8 +174,42 @@ export class ClientGame
         }
     }
 
-    setData(dataString: string, requestCallback: (clientDataRequest: ClientDataRequest) => void)
+    onData(dataString: string, clientDataCallback: (clientData: ClientData) => void)
     {
+        let currentMillis = new Date().getTime();
+        let dtServer = 0.001 * (currentMillis - this.lastServerDataMillis);
+
+        if (this.avgServerDeltaTime < 0)
+        {
+            this.avgServerDeltaTime = dtServer;
+        }
+        else
+        {
+            // rolling average
+            this.avgServerDeltaTime = lerp(this.avgServerDeltaTime, dtServer, 0.2);
+        }
+
+        // safety
+        if (this.avgServerDeltaTime === 0) this.avgServerDeltaTime = 0.1;
+        
+        /**
+         * clientdataObject which will be sent back to the server
+         */
+        this.currentDataIndex++;
+
+        let clientData: ClientData = 
+        {
+            ix: this.currentDataIndex,
+            in: INPUT.getAxesDelta(this.lastInputBufferIndex)
+        };
+
+        if (this.mainPlayer !== undefined)
+        {
+            this.mainPlayer.saveState(dtServer, clientData.ix, clientData.in);
+        }
+        this.lastInputBufferIndex = INPUT.getCurrentIndex();
+
+
         // save all ids for late use
         let allClientIds = new Set<string>();
         for (let [ id, go ] of this.gameObjects)
@@ -161,9 +220,9 @@ export class ClientGame
         let serverData = <ServerGameData>JSON.parse(dataString);
 
         ////////////// ANSWER REQUEST //////////////
-        if (serverData.id !== undefined)
+        if (serverData.in !== undefined || serverData.ex !== undefined)
         {
-            let dataRequest = this.dataRequests.get(serverData.id);
+            let dataRequest = this.dataRequests.get(serverData.ix);
             if (dataRequest !== undefined)
             {
                 ////////////// INFORMATION FOR CREATING NEW OBJECTS //////////////
@@ -174,54 +233,65 @@ export class ClientGame
                         let id = dataRequest.in[i];
                         let info = serverData.in[i];
 
-                        let name: string = '';
-                        
-                        /**
-                         * loop through properties
-                         */
-                        for (let i = 0; i < info.length; )
+                        // extract all properties
+                        let goProperties = new Map<GameObjectPropertyType, string | number>();
+                        for (let i = 0; i < info.length; i += 2)
                         {
-                            let propertyType = info[i]; i++
-
-                            switch (propertyType)
-                            {
-                                case GameObjectPropertyTypes.Name:
-                                    if (i < info.length)
-                                    {
-                                        name = info[i].toString();
-                                        i++;
-                                    }
-                                    break;
-
-                                default:
-                                    throw new Error('Property not found');
-                            }
+                            let property = <GameObjectPropertyType>info[i];
+                            goProperties.set(property, info[i + 1]);
                         }
+
+                        let prevState: GameObjectState | undefined;
 
                         let oldGO = this.gameObjects.get(id);
                         if (oldGO !== undefined)
                         {
+                            if (oldGO instanceof DummyGameObject)
+                            {
+                                prevState = oldGO.state;
+                            }
+
                             oldGO.onDeath();
                             this.gameObjects.delete(id);
                         }
 
-                        if (id === this.socket.id)
+                        let newGo: ClientGameObject | undefined;
+ 
+                        if (true) // is player
                         {
-                            let player = new ClientMainPlayer(this, name);
-                            this.gameObjects.set(id, player);
+                            let name = 'noname';
+                            let nameProperty = goProperties.get(GameObjectPropertyType.Name);
+                            if (typeof nameProperty === 'string')
+                            {
+                                name = nameProperty;
+                            }
 
-                            this.mainPlayer = player;
-                            this.gameState = 'ingame';
-                            this.mainCamera = 'player';
+                            if (id === this.socket.id)
+                            {
+                                const mp = new ClientMainPlayer(this, name);
+                                this.mainPlayer = mp;
+                                this.gameState = 'ingame';
+                                this.mainCamera = 'player';
+                                newGo = mp;
+                            }
+                            else
+                            {
+                                newGo = new ClientPlayer(this, name);
+                            }
                         }
-                        else
+
+                        if (newGo !== undefined)
                         {
-                            let player = new ClientPlayer(this, name);
-                            this.gameObjects.set(id, player);
+                            if (prevState !== undefined)
+                            {
+                                newGo.onServerData(prevState, -1, this.avgServerDeltaTime);
+                            }
+
+                            this.gameObjects.set(id, newGo);
                         }
                     }
                 }
-
+    
                 ////////////// DELETION OF OLD OBJECTS //////////////
                 if (serverData.ex !== undefined)
                 {
@@ -229,12 +299,12 @@ export class ClientGame
                     {
                         let id = dataRequest.ex[i];
                         let isStillExisting = serverData.ex[i];
-
+    
                         if (isStillExisting === 0)
                         {
                             // remove gameobject
                             let go = this.gameObjects.get(id);
-
+    
                             if (go !== undefined)
                             {
                                 go.onDeath();
@@ -251,34 +321,32 @@ export class ClientGame
                                     setTimeout(() =>
                                     {
                                         this.mainCamera = 'menu';
-                                    }, 2000);
+                                    }, 1000);
                                 }
                             }
                         }
                     }
                 }
-
-                this.dataRequests.delete(serverData.id);
+    
+                this.dataRequests.delete(serverData.ix);
             }
             else
             {
-                console.log('data request unknown to client');
+                console.log('request not found');
             }
         }
 
         ////////////// WORLD //////////////
         if (serverData.wo !== undefined)
         {
-            this.world.setState(serverData.wo);
+            this.world.onServerData(serverData.wo, serverData.ix, this.avgServerDeltaTime);
         }
 
         let newRequest: ClientDataRequest = 
         {
-            id: this.lastDataRequestNumber,
             in: [],
             ex: [],
         };
-        this.lastDataRequestNumber++;
 
         ////////////// GAMEOBJECTS //////////////
         if (serverData.go !== undefined)
@@ -291,12 +359,16 @@ export class ClientGame
                 {
                     /**
                      * doesn't know obj, ask for information with request
+                     * & create dummy obj
                      */
                     newRequest.in.push(id);
+
+                    const dummy = new DummyGameObject(goState);
+                    this.gameObjects.set(id, dummy);
                 }
                 else
                 {
-                    go.setState(goState);
+                    go.onServerData(goState, serverData.ix, this.avgServerDeltaTime);
                 }
 
                 allClientIds.delete(id);
@@ -304,25 +376,25 @@ export class ClientGame
         }
 
         /**
-         * server hasn't sent any information about this gameObject,
-         * ask if it still exists
+         * server hasn't sent any information about these ids,
+         * ask if their objects still exist
          */
         for (let id of allClientIds)
         {
             newRequest.ex.push(id);
         }
 
-        if (newRequest.in.length === 0 && newRequest.ex.length === 0)
+        if (newRequest.in.length > 0 || newRequest.ex.length > 0)
         {
-            // request is empty, do not send
-            this.lastDataRequestNumber--;
-        }
-        else
-        {
-            this.dataRequests.set(newRequest.id, newRequest);
+            // request has data, therefore save and attach to clientData
+            this.dataRequests.set(this.currentDataIndex, newRequest);
 
-            // request has data, send
-            requestCallback(newRequest);
+            clientData.re = newRequest;
         }
+
+        // send back clientData to server
+        clientDataCallback(clientData);
+
+        this.lastServerDataMillis = currentMillis;
     }
 }

@@ -1,6 +1,6 @@
 import { NoiseWorld } from "../common/noiseWorld";
 import * as THREE from 'three';
-import { ClientDataRequest, GameObjectState, ServerGameData } from "../common/gameObjectTypes";
+import { ClientDataRequest, ClientInput, GameObjectState, ServerGameData, GameObjectInformation } from "../common/gameObjectTypes";
 import { Player } from "./player";
 
 export interface GameObject
@@ -14,7 +14,7 @@ export interface GameObject
      * Information about object: name, model, type, etc. 
      * Sent only when requested.
      */
-    getInfo(): GameObjectState;
+    getInfo(): GameObjectInformation;
     
     /**
      * Current state of object: position, velocity, rotation, etc.
@@ -62,7 +62,7 @@ export class Game
      */
     getBasicServerData()
     {
-        let gameData: ServerGameData = 
+        let basicData: { wo: number[], go: [ string, GameObjectState ][] } = 
         {
             wo: this.world.getState(),
             go: [],
@@ -70,18 +70,15 @@ export class Game
 
         for (let [ id, go ] of this.gameObjects)
         {
-            gameData.go?.push([ id, go.getState() ]);
+            basicData.go.push([ id, go.getState() ]);
         };
 
-        return gameData;
+        return basicData;
     }
 
     getClientSpecificGameData(req: ClientDataRequest)
     {
-        let data: ServerGameData = 
-        {
-            id: req.id,
-        };
+        let data: { in?: GameObjectInformation[], ex?: number[] } = {};
 
         if (req.in !== undefined)
         {
@@ -135,6 +132,19 @@ export class Game
         if (player !== undefined)
         {
             player.isDead = true;
+        }
+    }
+
+    setInput(id: string, input: ClientInput)
+    {
+        let player = this.gameObjects.get(id);
+        
+        if (player !== undefined)
+        {
+            if (player instanceof Player)
+            {
+                player.setInput(input);
+            }
         }
     }
 }

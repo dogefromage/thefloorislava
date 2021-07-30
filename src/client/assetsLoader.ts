@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader'
+import { log } from '../common/debug';
 const objLoader = new OBJLoader();
 
 let models = new Map<string, THREE.Object3D>();
@@ -31,7 +32,23 @@ export function getModel(path: string, onload: (modelInstance: THREE.Object3D) =
         }, 
             undefined, (error) =>
         {
-            console.log('error while loading obj-file');
+            log('error while loading obj-file');
         });
+    }
+}
+
+export function disposeObject(obj: THREE.Object3D)
+{
+    obj.traverse((mesh: any) =>
+    {
+        if (mesh.hasOwnProperty('geometry'))
+        {
+            mesh.geometry.dispose();
+        }
+    });
+
+    if (obj.hasOwnProperty('geometry'))
+    {
+        (<any>obj).geometry.dispose();
     }
 }

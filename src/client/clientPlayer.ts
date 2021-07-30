@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { ClientGame } from './clientGame';
 import { ClientNoiseWorld } from './clientNoiseWorld';
-import { getModel } from './assetsLoader';
-import { getAxes } from './input';
-import { lerpClamp } from '../common/utils';
+import { getModel, disposeObject } from './assetsLoader';
 import { ClientGameObject } from './clientGame';
-import { GameObjectPropertyTypes, GameObjectState } from '../common/gameObjectTypes';
+import { ClientData, ClientInput, GameObjectPropertyType, GameObjectState } from '../common/gameObjectTypes';
+import * as INPUT from './input';
+import { log } from '../common/debug';
+import { movePlayer, getRotation } from '../common/playerMovement';
+import { integrateStates, lerpStates, stateRMSError } from '../common/goState';
 
 export class ClientPlayer implements ClientGameObject
 {
@@ -14,11 +16,12 @@ export class ClientPlayer implements ClientGameObject
     public position = new THREE.Vector3();
     public rotX = 0;
     public rotY = 0;
-    // public rotVelX = 0;
-    // public rotVelY = 0;
 
     private colliderVisible = false;
     private collider: THREE.LineSegments;
+
+    private avgServerDeltaTime = -1;
+    private stateVelocity: GameObjectState | undefined;
 
     constructor(private game: ClientGame, public name: string)    
     {
@@ -49,11 +52,6 @@ export class ClientPlayer implements ClientGameObject
             new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 }));
     }
 
-    getRotation()
-    {
-        return new THREE.Euler(this.rotX, this.rotY, 0, 'YXZ');
-    }
-
     setColliderVisibility(visibility: boolean)
     {
         if (visibility !== this.colliderVisible)
@@ -73,15 +71,6 @@ export class ClientPlayer implements ClientGameObject
 
     update(world: ClientNoiseWorld, dt: number)
     {
-        // ////////////// MOVEMENT ////////////////
-        // let speed = 0.5;
-        // let movementVector = new THREE.Vector3(0, 0, speed * dt).applyEuler(this.getRotation());
-        // this.position.add(movementVector);
-
-        let rotation = this.getRotation();
-        this.mesh.position.copy(this.position);
-        this.mesh.rotation.copy(rotation);
-
         // rotation.x += 1.570796;
         // this.collider.position.copy(this.position);
         // this.collider.rotation.copy(rotation);
@@ -118,7 +107,21 @@ export class ClientPlayer implements ClientGameObject
         //     this.state = 'dead';
         // }
 
-        ////////////// ANIMATION ////////////////
+        /**
+         * interpolate between server values
+         */
+        if (this.stateVelocity !== undefined)
+        {
+            let state = this.getState();
+            state = integrateStates(state, this.stateVelocity, dt);
+            this.setState(state);
+        }
+
+        ////////////// MODEL AND ANIMATION ////////////////
+        let rotation = getRotation(this.rotX, this.rotY);
+        this.mesh.position.copy(this.position);
+        this.mesh.rotation.copy(rotation);
+
         if (this.mesh.children.length === 3)
         {
             this.mesh.children[1].rotation.z += 0.5 * dt;
@@ -129,63 +132,149 @@ export class ClientPlayer implements ClientGameObject
     onDeath()
     {
         this.game.removeFromScene(this.mesh);
+        disposeObject(this.mesh);
+
         this.game.removeFromScene(this.collider);
+        disposeObject(this.collider);
+    }
+
+    getState()
+    {
+        let state: number[] = 
+        [
+            this.position.x,
+            this.position.y,
+            this.position.z,
+            this.rotX,
+            this.rotY
+        ];
+
+        return state;
     }
 
     setState(state: GameObjectState)
     {
-        let i = 0;
-        while (i < state.length)
+        for (let i = 0; i < state.length; i++)
         {
-            let propertyType = state[i]; i++;
-            switch (propertyType)
+            if (isNaN(state[i]))
             {
-                case GameObjectPropertyTypes.Position:
-                    this.position.x = Number(state[i]); i++;
-                    this.position.y = Number(state[i]); i++;
-                    this.position.z = Number(state[i]); i++;
-                    break;
-
-                case GameObjectPropertyTypes.Rotation:
-                    this.rotX = Number(state[i]); i++;
-                    this.rotY = Number(state[i]); i++;
-                    break;
-
-                default:
-                    throw new Error('something must have happened');
+                state[i] = 0;
+                log('object state property is nan');
             }
+        }
+
+        // set state
+        if (state.length === 5)
+        {
+            this.position.x = state[0];
+            this.position.y = state[1];
+            this.position.z = state[2];
+            this.rotX = state[3];
+            this.rotY = state[4];
+        }
+        else
+        {
+            log('state did not match object');
+        }
+    }
+
+    onServerData(state: GameObjectState, dataIndex: number, avgServerDeltaTime: number)
+    {
+        // for first call
+        if (this.stateVelocity === undefined)
+        {
+            this.setState(state);
+        }
+        
+        let currState = this.getState();
+        if (currState.length != state.length)
+        {
+            log('states do not match!');
+        }
+
+        /**
+         * calculate state velocity for smoothly updating object during this.update()
+         */
+        this.stateVelocity = [];
+
+        for (let i = 0; i < currState.length; i++)
+        {
+            this.stateVelocity.push((state[i] - currState[i]) / avgServerDeltaTime);
         }
     }
 }
 
+interface InputQueueObject
+{
+    dt: number,
+    index: number,
+    input: ClientInput,
+};
+
 export class ClientMainPlayer extends ClientPlayer
 {
-    private lastAxisToken = -1;
+    public targetState = [ 0, 0, 0, 0, 0 ];
+    private lastInputBufferIndex = 0;
+    public inputQueue: InputQueueObject[] = [];
+
+    saveState(dt: number, index: number, input: ClientInput)
+    {
+        let state: InputQueueObject = 
+        {
+            dt,
+            index,
+            input
+        };
+
+        this.inputQueue.push(state);
+    }
+
+    onServerData(serverState: GameObjectState, dataIndex: number, avgServerDeltaTime: number)
+    {
+        // cut off old part from stateQueue
+        while (true)
+        {
+            if (this.inputQueue.length === 0)
+            {
+                break;
+            }
+            
+            if (dataIndex < this.inputQueue[0].index)
+            {
+                break;
+            }
+
+            this.inputQueue.shift();
+        }
+
+        // simulate forwards
+        for (let i = 0; i < this.inputQueue.length; i++)
+        {
+            let inputObj = this.inputQueue[i];
+            serverState = movePlayer(serverState, inputObj.input, inputObj.dt);
+        }
+
+        this.targetState = serverState;
+    }
 
     update(world: ClientNoiseWorld, dt: number)
     {
-        ////////////// ROTATION ////////////////
-        // let [ inputX, inputY, axisToken ] = getAxes();
-        // if (true) inputX = -inputX;
-        // if (false) inputY = -inputY;
+        let inputAxes = INPUT.getAxesDelta(this.lastInputBufferIndex);
+        this.lastInputBufferIndex = INPUT.getCurrentIndex();
 
-        // const rotSmooth = 5;
-        // const sensitivity = 0.15;
-        
-        // if (axisToken == this.lastAxisToken) // new input
-        // {
-        //     inputX = inputY = 0;
-        // }
-        // this.lastAxisToken = axisToken;
+        let state = movePlayer(this.getState(), inputAxes, dt);
+        this.targetState = movePlayer(this.targetState, inputAxes, dt);
 
-        // this.rotVelX = lerpClamp(this.rotVelX, sensitivity * inputY, rotSmooth * dt);
-        // this.rotVelY = lerpClamp(this.rotVelY, sensitivity * inputX, rotSmooth * dt);
+        state = lerpStates(state, this.targetState, dt);
 
-        // this.rotX += this.rotVelX * dt;
-        // this.rotY += this.rotVelY * dt;
+        this.setState(state);
 
-        // if (this.rotX > 1.570796) this.rotX = 1.570796;
-        // else if (this.rotX < -1.570796) this.rotX = -1.570796;
+        // fully accept target if too far off
+        let stateErr = stateRMSError(this.targetState, state);
+        if (stateErr > 1.0)
+        {
+            this.setState(this.targetState);
+        }
 
         super.update(world, dt);
     }
