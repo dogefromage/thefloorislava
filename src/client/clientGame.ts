@@ -3,7 +3,7 @@ import { ClientNoiseWorld } from './clientNoiseWorld';
 import { ClientMainPlayer, ClientPlayer } from './clientPlayer';
 import { ThirdPersonCamera } from './thirdPersonCamera';
 import * as io from 'socket.io-client';
-import { ClientDataRequest, GameObjectPropertyType, ServerGameData, GameObjectState, ClientData } from '../common/gameObjectTypes';
+import { ClientDataRequest, GameObjectPropertyType, ServerGameData, GameObjectState, ClientData, GameObjectType } from '../common/gameObjectTypes';
 import * as INPUT from './input';
 import { lerp } from 'three/src/math/MathUtils';
 
@@ -233,9 +233,11 @@ export class ClientGame
                         let id = dataRequest.in[i];
                         let info = serverData.in[i];
 
-                        // extract all properties
+                        let goType = <GameObjectType>info[0];
+
+                        // extract all properties, starting at index 1
                         let goProperties = new Map<GameObjectPropertyType, string | number>();
-                        for (let i = 0; i < info.length; i += 2)
+                        for (let i = 1; i < info.length; i += 2)
                         {
                             let property = <GameObjectPropertyType>info[i];
                             goProperties.set(property, info[i + 1]);
@@ -257,7 +259,7 @@ export class ClientGame
 
                         let newGo: ClientGameObject | undefined;
  
-                        if (true) // is player
+                        if (goType === GameObjectType.Player)
                         {
                             let name = 'noname';
                             let nameProperty = goProperties.get(GameObjectPropertyType.Name);
@@ -278,6 +280,10 @@ export class ClientGame
                             {
                                 newGo = new ClientPlayer(this, name);
                             }
+                        }
+                        else if (goType === GameObjectType.Projectile)
+                        {
+                            throw new Error('gagi');
                         }
 
                         if (newGo !== undefined)

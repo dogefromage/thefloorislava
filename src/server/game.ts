@@ -2,6 +2,7 @@ import { NoiseWorld } from "../common/noiseWorld";
 import * as THREE from 'three';
 import { ClientDataRequest, ClientInput, GameObjectState, ServerGameData, GameObjectInformation } from "../common/gameObjectTypes";
 import { Player } from "./player";
+import { Octree } from "./octree";
 
 export interface GameObject
 {
@@ -29,14 +30,27 @@ export class Game
 
     private gameObjects = new Map<string, GameObject>();
 
-    constructor()
+    constructor(public worldSeed: number)
     {
         this.world = new NoiseWorld(
-            0, // seed 
+            this.worldSeed, // seed 
             new THREE.Box3( // bounds
                 new THREE.Vector3(-2, -2, -2), 
                 new THREE.Vector3(2, 2, 2))
             );
+    }
+
+    *gameObjectsOfType(Type: any)
+    {
+        for (let pair of this.gameObjects)
+        {
+            if (pair[1] instanceof Type)
+            {
+                yield pair;
+            }
+        }
+
+        return;
     }
 
     update(dt: number)
@@ -55,6 +69,20 @@ export class Game
                 this.gameObjects.delete(id);
             }
         }
+
+        //////// OCTREE //////////
+        const octree = new Octree<GameObject>(this.world.bounds);
+        for (let [ id, go ] of this.gameObjects)
+        {
+            let bounds = (<any>go).getBounds?.();
+
+            if (bounds instanceof THREE.Box3)
+            {
+                octree.insert(bounds, go);
+            }
+        }
+
+        
     }
 
     /**

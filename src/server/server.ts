@@ -18,18 +18,14 @@ app.get("/", (req: express.Request, res: express.Response) =>
     res.sendFile(path.resolve(process.cwd(), 'src/client/index.html'));
 });
 
-let game = new Game();
+let game = new Game(0);
 
 class Client
 {
     public lastRequest?: ClientDataRequest;
     public lastIndex?: number;
 
-    constructor(
-        public socket: socketio.Socket
-        ) 
-    {
-    }
+    constructor(public socket: socketio.Socket) {}
 }
 
 let clients = new Map<string, Client>();

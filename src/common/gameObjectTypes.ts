@@ -10,7 +10,16 @@ export const enum GameObjectPropertyType
     Name,
 };
 
-export type GameObjectInformation = ( GameObjectPropertyType | number | string )[];
+/**
+ * list of gameobject types
+ */
+export const enum GameObjectType
+{
+    Player,
+    Projectile,
+}
+
+export type GameObjectInformation = ( GameObjectType | GameObjectPropertyType | number | string )[];
 
 export type GameObjectState = number[];
 

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Game, GameObject } from './game';
-import { ClientInput, GameObjectInformation, GameObjectPropertyType, GameObjectState } from '../common/gameObjectTypes';
+import { ClientInput, GameObjectInformation, GameObjectPropertyType, GameObjectState, GameObjectType } from '../common/gameObjectTypes';
 import { NoiseWorld } from '../common/noiseWorld';
 import { log } from '../common/debug';
 import { getRotation, movePlayer } from '../common/playerMovement';
@@ -11,7 +11,7 @@ export class Player implements GameObject
     public rotVelX = 0;
     public rotVelY = 0;
 
-    private collider: THREE.BufferGeometry;
+    private collider: THREE.Mesh;
     private input: ClientInput = [ 0, 0 ];
 
     public isDead = false;
@@ -24,8 +24,10 @@ export class Player implements GameObject
     {
         let scale = 0.05;
 
-        this.collider = 
-            new THREE.WireframeGeometry(new THREE.CylinderGeometry(scale * 0.4, scale * 0.45, scale * 1.7, 5, 1, true)); 
+        this.collider = new THREE.Mesh(
+            new THREE.WireframeGeometry(new THREE.CylinderGeometry(scale * 0.4, scale * 0.45, scale * 1.7, 5, 1, true)),
+            new THREE.MeshBasicMaterial(),
+        );
     }
 
     update(world: NoiseWorld, dt: number)
@@ -40,7 +42,7 @@ export class Player implements GameObject
         let matrix = new THREE.Matrix4().compose(this.position, rotationQuat, new THREE.Vector3(1,1,1));
         
         let isColliding = false;
-        let positions = this.collider.attributes["position"].array;
+        let positions = this.collider.geometry.attributes["position"].array;
         for (let i = 0; i < positions.length; i += 3)
         {
             let p = new THREE.Vector3(positions[i], positions[i + 1], positions[i + 2]);
@@ -60,13 +62,14 @@ export class Player implements GameObject
 
     onDeath()
     {
-        this.collider.dispose();
+        this.collider.geometry.dispose();
     }
     
     getInfo()
     {
         let info: GameObjectInformation = 
         [
+            GameObjectType.Player,
             GameObjectPropertyType.Name, this.name
         ];
 
@@ -108,5 +111,10 @@ export class Player implements GameObject
     setInput(input: ClientInput)
     {
         this.input = input;
+    }
+
+    getBounds()
+    {
+        return new THREE.Box3().setFromObject(this.collider);
     }
 }
